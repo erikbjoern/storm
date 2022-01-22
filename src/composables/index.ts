@@ -1,20 +1,20 @@
 const modules = import.meta.glob('./use*')
 
-function parsePath (path: string) {
-  const parts = (/^(.*[\\/])?(.*?)(\.[^.]*?|)$/gi).exec(path) || []
+function parsePath(path: string) {
+  const parts = /^(.*[\\/])?(.*?)(\.[^.]*?|)$/gi.exec(path) || []
 
   return {
-    path: parts[ 0 ] || '',
-    subpath: parts[ 1 ] || '',
-    name: parts[ 2 ] || '',
-    extension: parts[ 3 ] || ''
+    path: parts[0] || '',
+    subpath: parts[1] || '',
+    name: parts[2] || '',
+    extension: parts[3] || '',
   }
 }
 
-const children: { 
+const children: {
   [key: string]: {
     [functionName: string]: Function
-  },
+  }
 } = {}
 
 for (const path in modules) {
@@ -24,4 +24,7 @@ for (const path in modules) {
   children[parts.name] = func
 }
 
-export default children as { useRemSize: { getRemInPixels: Function } }
+export default children as {
+  useRemSize: { getRemInPixels: Function }
+  useMousePosition: { getCoordinateFromCursor: Function }
+}

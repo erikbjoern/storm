@@ -1,57 +1,71 @@
 <template>
-<div id="click-container" class="w-screen h-screen" @click="handlePageClick">
-  <h1 class="fixed w-screen mt-12 text-3xl antialiased font-semibold text-center text-green-800">
-    Storm
-  </h1>
-  <div 
-    v-for="textNode in textNodes" 
-    :key="textNode.id" 
-    class="absolute" 
-    :style="{ left: `${textNode.coordinates.x}px`, top: `${textNode.coordinates.y}px` }"
-  >
-    <div class="flex">
-      <h4 class="mr-2">&bullet;</h4>
-      <input 
-        :id="textNode.id"
-        v-model="textNode.title" 
-        @keydown.enter="blurTextNode(textNode)"
-        @keydown.escape="cancelEditingTextNode(textNode)"
-      />
+  <div id="click-container" class="w-screen h-screen cursor-pointer" @click="handlePageClick">
+    <h1 class="fixed w-screen mt-12 text-3xl antialiased font-semibold text-center text-green-800">
+      Storm
+    </h1>
+    <div
+      v-for="textNode in textNodes"
+      :key="textNode.id"
+      class="absolute"
+      :style="{
+        left: `${textNode.coordinates.x}px`,
+        top: `${textNode.coordinates.y}px`,
+        transition: nodeIsPickedUp(textNode) ? undefined : 'all 200ms ease-out',
+        transitionProperty: 'left, top',
+        zIndex: textNode.coordinates.x + textNode.coordinates.y,
+      }"
+    >
+      <div class="flex" :class="nodeIsPickedUp(textNode) && 'cursor-grabbing'">
+        <h4
+          @mousedown="e => pickUpNode(e, textNode)"
+          class="mr-2 select-none"
+          :class="!nodeIsPickedUp(textNode) && !nodeIsEmpty(textNode) && 'cursor-grab'"
+        >
+          &bullet;
+        </h4>
+        <input
+          :id="textNode.id"
+          v-model="textNode.title"
+          class="bg-transparent"
+          @keydown.enter="blurTextNode(textNode)"
+          @keydown.escape="cancelEditingTextNode(textNode)"
+        />
+      </div>
     </div>
   </div>
-</div>
 </template>
 
 <script lang="ts">
-import { defineComponent, reactive, ref } from 'vue';
-import cuid from 'cuid';
-import composables from './composables'
+import { defineComponent, reactive, ref } from 'vue'
+import { getCoordinateFromCursor } from './composables/useMousePosition'
+import cuid from 'cuid'
 
 type TextNode = {
-  id: string,
-  title: string,
+  id: string
+  title: string
   coordinates: {
-    x: number,
-    y: number,
+    x: number
+    y: number
   }
 }
 
 export default defineComponent({
   setup() {
-    const { getRemInPixels } = composables.useRemSize
-    const textNodes: TextNode[] = reactive([]);
+    const textNodes: TextNode[] = reactive([])
     const focusedTextNodeId = ref('')
     const focusedTextNodeTitle = ref('')
-    
-    const roundNearest = (n: number, amount: number) => Math.round(n / amount) * amount
+    const pickedUpNodeId = ref('')
+    const aNodeWasRecentlyDropped = ref(false)
 
-    const clearIfEmpty = (textNode: TextNode) => {
-      if (!textNode.title) {
-        const indexOfNode = textNodes.findIndex(n => n.id == textNode.id)
+    const nodeIsEmpty = (node: TextNode) => {
+      return !node.title
+    }
 
-        if (indexOfNode !== -1) { 
-          textNodes.splice(indexOfNode, 1)
-        }
+    const deleteNode = (textNode: TextNode) => {
+      const indexOfNode = textNodes.findIndex(n => n.id == textNode.id)
+
+      if (indexOfNode !== -1) {
+        textNodes.splice(indexOfNode, 1)
       }
     }
 
@@ -65,7 +79,7 @@ export default defineComponent({
       focusedTextNodeId.value = ''
       focusedTextNodeTitle.value = ''
 
-      clearIfEmpty(textNode)
+      if (nodeIsEmpty(textNode)) deleteNode(textNode)
     }
 
     const targetElement = (e: Event) => {
@@ -80,16 +94,21 @@ export default defineComponent({
       focusedTextNodeTitle.value = textNode.title
       focusedTextNodeId.value = textNode.id
     }
-    
+
     const createNode = (e: MouseEvent) => {
+      const coordinates = {
+        x: getCoordinateFromCursor(e, 'CLOSEST_SNAPPING_POINT', 'x'),
+        y: e.y,
+      }
+
       const newNode = {
         id: cuid(),
         title: '',
         coordinates: {
-          x: Math.max(0, roundNearest(e.x - getRemInPixels(0.75), getRemInPixels(1.5))),
-          y: Math.max(0, roundNearest(e.y - getRemInPixels(0.75), getRemInPixels(1.5))),
-        }
-      } 
+          x: coordinates.x,
+          y: getCoordinateFromCursor(coordinates, 'CLOSEST_FREE_SNAPPING_POINT', 'y', textNodes),
+        },
+      }
 
       textNodes.push(newNode)
 
@@ -97,7 +116,11 @@ export default defineComponent({
     }
 
     const handlePageClick = (e: MouseEvent) => {
-      const focusedTextNode = textNodes.find(n => focusedTextNodeId.value && n.id === focusedTextNodeId.value)
+      if (aNodeWasRecentlyDropped.value) return
+
+      const focusedTextNode = textNodes.find(
+        n => focusedTextNodeId.value && n.id === focusedTextNodeId.value
+      )
 
       if (focusedTextNode) {
         if (targetElement(e).id == focusedTextNode.id) {
@@ -111,7 +134,7 @@ export default defineComponent({
         if (targetTextNode) {
           focusTextNode(targetTextNode)
         }
-      } else {  
+      } else {
         createNode(e)
       }
     }
@@ -119,23 +142,69 @@ export default defineComponent({
     return {
       textNodes,
       blurTextNode,
+      nodeIsEmpty,
       focusedTextNodeId,
       focusedTextNodeTitle,
+      pickedUpNodeId,
+      aNodeWasRecentlyDropped,
       handlePageClick,
-    };
+      getCoordinateFromCursor,
+    }
   },
   methods: {
-    cancelEditingTextNode(textNode:TextNode) {
+    cancelEditingTextNode(textNode: TextNode) {
       textNode.title = this.focusedTextNodeTitle
       this.blurTextNode(textNode)
     },
     isFocused(textNode: TextNode) {
       return this.focusedTextNodeId == textNode.id
-    }
+    },
+    pickUpNode(e: MouseEvent, node: TextNode) {
+      const focusedNode = this.textNodes.find(n => n.id == this.focusedTextNodeId)
+
+      if (focusedNode) {
+        this.blurTextNode(focusedNode)
+      }
+
+      this.pickedUpNodeId = node.id
+
+      const updateNodePosition = (e: MouseEvent) => {
+        node.coordinates = {
+          x: this.getCoordinateFromCursor(e, 'BULLET_POINT_OFFSET', 'x'),
+          y: this.getCoordinateFromCursor(e, 'BULLET_POINT_OFFSET', 'y'),
+        }
+      }
+
+      const dropNode = (e: MouseEvent) => {
+        this.pickedUpNodeId = ''
+
+        const nodes = this.textNodes
+        const coords = {
+          x: this.getCoordinateFromCursor(node.coordinates, 'CLOSEST_SNAPPING_POINT', 'x'),
+          y: node.coordinates.y,
+        }
+
+        node.coordinates = {
+          x: coords.x,
+          y: this.getCoordinateFromCursor(coords, 'CLOSEST_FREE_SNAPPING_POINT', 'y', nodes),
+        }
+
+        this.aNodeWasRecentlyDropped = true
+
+        setTimeout(() => (this.aNodeWasRecentlyDropped = false), 100)
+
+        document.removeEventListener('mousemove', updateNodePosition)
+        document.removeEventListener('mouseup', dropNode)
+      }
+
+      document.addEventListener('mousemove', updateNodePosition)
+      document.addEventListener('mouseup', dropNode)
+    },
+    nodeIsPickedUp(node: TextNode) {
+      return this.pickedUpNodeId == node.id
+    },
   },
 })
 </script>
 
-
-<style>
-</style>
+<style></style>
