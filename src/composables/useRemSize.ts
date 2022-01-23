@@ -1,3 +1,3 @@
 export function getRemInPixels(remValue: number) {
-  return remValue * parseFloat(getComputedStyle(document.documentElement).fontSize);
+  return remValue * parseFloat(getComputedStyle(document.documentElement).fontSize)
 }

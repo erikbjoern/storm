@@ -1,18 +1,23 @@
 <template>
-  <div id="click-container" class="w-screen h-screen cursor-pointer" @click="handlePageClick">
-    <h1 class="fixed w-screen mt-12 text-3xl antialiased font-semibold text-center text-green-800">
+  <div
+    id="click-container"
+    class="w-screen h-screen cursor-pointer select-none"
+    @click="handlePageClick"
+  >
+    <h1 class="fixed w-screen mt-12 text-3xl antialiased font-semibold text-center text-[#447959]">
       Storm
     </h1>
     <div
       v-for="textNode in textNodes"
       :key="textNode.id"
-      class="absolute"
+      class="absolute p-2 rounded hover:bg-[#45345425]"
       :style="{
         left: `${textNode.coordinates.x}px`,
         top: `${textNode.coordinates.y}px`,
         transition: nodeIsPickedUp(textNode) ? undefined : 'all 200ms ease-out',
         transitionProperty: 'left, top',
         zIndex: textNode.coordinates.x + textNode.coordinates.y,
+        backgroundColor: nodeIsFocused(textNode) ? '#44795999' : undefined,
       }"
     >
       <div class="flex" :class="nodeIsPickedUp(textNode) && 'cursor-grabbing'">
@@ -23,12 +28,12 @@
         >
           &bullet;
         </h4>
-        <input
-          :id="textNode.id"
+        <AutoTextArea
           v-model="textNode.title"
-          class="bg-transparent"
-          @keydown.enter="blurTextNode(textNode)"
-          @keydown.escape="cancelEditingTextNode(textNode)"
+          :textNode="textNode"
+          :is-focused="nodeIsFocused(textNode)"
+          @keydown-enter="blurTextNode(textNode)"
+          @cancel="blurTextNode(textNode)"
         />
       </div>
     </div>
@@ -38,18 +43,12 @@
 <script lang="ts">
 import { defineComponent, reactive, ref } from 'vue'
 import { getCoordinateFromCursor } from './composables/useMousePosition'
+import { TextNode } from './types/textNodes'
 import cuid from 'cuid'
-
-type TextNode = {
-  id: string
-  title: string
-  coordinates: {
-    x: number
-    y: number
-  }
-}
+import AutoTextArea from './components/AutoSizeTextArea.vue'
 
 export default defineComponent({
+  components: { AutoTextArea },
   setup() {
     const textNodes: TextNode[] = reactive([])
     const focusedTextNodeId = ref('')
@@ -59,6 +58,10 @@ export default defineComponent({
 
     const nodeIsEmpty = (node: TextNode) => {
       return !node.title
+    }
+
+    const nodeIsFocused = (node: TextNode) => {
+      return node.id == focusedTextNodeId.value
     }
 
     const deleteNode = (textNode: TextNode) => {
@@ -118,9 +121,7 @@ export default defineComponent({
     const handlePageClick = (e: MouseEvent) => {
       if (aNodeWasRecentlyDropped.value) return
 
-      const focusedTextNode = textNodes.find(
-        n => focusedTextNodeId.value && n.id === focusedTextNodeId.value
-      )
+      const focusedTextNode = textNodes.find(n => nodeIsFocused(n))
 
       if (focusedTextNode) {
         if (targetElement(e).id == focusedTextNode.id) {
@@ -143,6 +144,7 @@ export default defineComponent({
       textNodes,
       blurTextNode,
       nodeIsEmpty,
+      nodeIsFocused,
       focusedTextNodeId,
       focusedTextNodeTitle,
       pickedUpNodeId,
@@ -152,16 +154,8 @@ export default defineComponent({
     }
   },
   methods: {
-    cancelEditingTextNode(textNode: TextNode) {
-      textNode.title = this.focusedTextNodeTitle
-      this.blurTextNode(textNode)
-    },
-    isFocused(textNode: TextNode) {
-      return this.focusedTextNodeId == textNode.id
-    },
     pickUpNode(e: MouseEvent, node: TextNode) {
-      const focusedNode = this.textNodes.find(n => n.id == this.focusedTextNodeId)
-
+      const focusedNode = this.textNodes.find(n => this.nodeIsFocused(n))
       if (focusedNode) {
         this.blurTextNode(focusedNode)
       }

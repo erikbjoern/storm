@@ -7,7 +7,7 @@ type Coords = {
   y: number
 }
 
-const SNAPPING_DISTANCE = getRemInPixels(1.5)
+const SNAPPING_DISTANCE = getRemInPixels(2)
 const BULLET_POINT_OFFSET = {
   x: SNAPPING_DISTANCE / 4,
   y: SNAPPING_DISTANCE / 2,
