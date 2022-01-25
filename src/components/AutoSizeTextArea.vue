@@ -20,6 +20,7 @@
         }
       "
       :style="{
+        width: '8rem',
         height: '1.5rem',
         minWidth: '8rem',
         resize: 'none',
