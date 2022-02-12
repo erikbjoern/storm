@@ -1,6 +1,6 @@
 <template>
   <div
-    id="click-container"
+    ref="clickContainer"
     class="w-screen h-screen cursor-pointer select-none"
     @click="handlePageClick"
   >
@@ -8,8 +8,9 @@
       Storm
     </h1>
     <div
-      v-for="textNode in textNodes"
+      v-for="(textNode, i) in textNodes"
       :key="textNode.id"
+      :id="textNode.id"
       class="absolute p-2 rounded hover:bg-[#45345425]"
       :style="{
         left: `${textNode.coordinates.x}px`,
@@ -31,174 +32,172 @@
         <AutoTextArea
           v-model="textNode.title"
           :textNode="textNode"
-          :is-focused="nodeIsFocused(textNode)"
-          @keydown-enter="blurTextNode(textNode)"
+          :isFocused="nodeIsFocused(textNode)"
           @cancel="blurTextNode(textNode)"
+          @focusChange="handleTextNodeFocus"
+          :ref="(el: any) => setNodeRefs(el, textNode, i)"
         />
       </div>
     </div>
   </div>
 </template>
 
-<script lang="ts">
-import { defineComponent, reactive, ref } from 'vue'
+<script setup lang="ts">
+import { h, nextTick, reactive, ref } from 'vue'
 import { getCoordinateFromCursor } from './composables/useMousePosition'
 import { TextNode } from './types/textNodes'
 import cuid from 'cuid'
 import AutoTextArea from './components/AutoSizeTextArea.vue'
+import { IAutoSizeTextArea } from './types/textNodes'
 
-export default defineComponent({
-  components: { AutoTextArea },
-  setup() {
-    const textNodes: TextNode[] = reactive([])
-    const focusedTextNodeId = ref('')
-    const focusedTextNodeTitle = ref('')
-    const pickedUpNodeId = ref('')
-    const aNodeWasRecentlyDropped = ref(false)
+const textNodes: TextNode[] = reactive([])
+const focusedTextNodeId = ref('')
+const focusedTextNodeTitle = ref('')
+const pickedUpNodeId = ref('')
+const aNodeWasRecentlyBlurred = ref(false)
 
-    const nodeIsEmpty = (node: TextNode) => {
-      return !node.title
-    }
+const clickContainer = ref<Element>()
 
-    const nodeIsFocused = (node: TextNode) => {
-      return node.id == focusedTextNodeId.value
-    }
+const nodeRefs = ref<{ textNode: TextNode; autoSizeTextarea: IAutoSizeTextArea }[]>([])
+const setNodeRefs = (el: IAutoSizeTextArea, textNode: TextNode, index: number) => {
+  nodeRefs.value[index] = {
+    textNode,
+    autoSizeTextarea: el,
+  }
+}
+// onBeforeUpdate(() => (nodeRefs.value = []))
 
-    const deleteNode = (textNode: TextNode) => {
-      const indexOfNode = textNodes.findIndex(n => n.id == textNode.id)
+const handleTextNodeFocus = (params: { focusType: 'focused' | 'blurred'; textNode: TextNode }) => {
+  const { focusType, textNode } = params
 
-      if (indexOfNode !== -1) {
-        textNodes.splice(indexOfNode, 1)
-      }
-    }
+  if (focusType == 'blurred' && focusedTextNodeId.value == textNode.id) {
+    focusedTextNodeId.value = ''
+    focusedTextNodeTitle.value = ''
 
-    const blurTextNode = (textNode: TextNode, e?: Event) => {
-      const element = document.getElementById(textNode.id)
+    blurTextNode(textNode)
+  }
 
-      if (document.activeElement === element) {
-        element?.blur()
-      }
+  if (focusType == 'focused') {
+    focusedTextNodeId.value = textNode.id
+    focusedTextNodeTitle.value = textNode.title
+  }
+}
 
-      focusedTextNodeId.value = ''
-      focusedTextNodeTitle.value = ''
+const nodeIsEmpty = (node: TextNode) => {
+  return !node.title
+}
 
-      if (nodeIsEmpty(textNode)) deleteNode(textNode)
-    }
+const nodeIsFocused = (node: TextNode) => {
+  return node.id == focusedTextNodeId.value
+}
 
-    const targetElement = (e: Event) => {
-      return (e.target instanceof Element ? e.target : {}) as HTMLElement
-    }
+const deleteNode = (textNode: TextNode) => {
+  const indexOfNode = textNodes.findIndex(n => n.id == textNode.id)
 
-    const focusTextNode = (textNode: TextNode) => {
-      requestAnimationFrame(() => {
-        document.getElementById(textNode.id)?.focus()
-      })
+  if (indexOfNode !== -1) {
+    textNodes.splice(indexOfNode, 1)
+  }
+}
 
-      focusedTextNodeTitle.value = textNode.title
-      focusedTextNodeId.value = textNode.id
-    }
+const blurTextNode = (textNode: TextNode) => {
+  const targetNode = nodeRefs.value.find(n => n.textNode.id == textNode.id)
+  const textarea = targetNode?.autoSizeTextarea.$refs.textarea
 
-    const createNode = (e: MouseEvent) => {
-      const coordinates = {
-        x: getCoordinateFromCursor(e, 'CLOSEST_SNAPPING_POINT', 'x'),
-        y: getCoordinateFromCursor(e, 'BULLET_POINT_OFFSET', 'y'),
-      }
+  if (document.activeElement === textarea) {
+    textarea?.blur()
+  }
 
-      const newNode = {
-        id: cuid(),
-        title: '',
-        coordinates: {
-          x: coordinates.x,
-          y: getCoordinateFromCursor(coordinates, 'CLOSEST_FREE_SNAPPING_POINT', 'y', textNodes),
-        },
-      }
+  if (nodeIsEmpty(textNode)) deleteNode(textNode)
 
-      textNodes.push(newNode)
+  releaseNode()
+}
 
-      focusTextNode(newNode)
-    }
+const focusTextNode = (textNode: TextNode) => {
+  nextTick(() => {
+    const targetNode = nodeRefs.value.find(e => e.textNode.id == textNode.id)
 
-    const handlePageClick = (e: MouseEvent) => {
-      if (aNodeWasRecentlyDropped.value) return
+    if (!targetNode) return
 
-      const focusedTextNode = textNodes.find(n => nodeIsFocused(n))
+    targetNode.autoSizeTextarea.updateElementSize()
+    targetNode.autoSizeTextarea.$refs.textarea?.focus()
+  })
+}
 
-      if (focusedTextNode) {
-        if (targetElement(e).id == focusedTextNode.id) {
-          return
-        }
+const createNode = (e: MouseEvent) => {
+  const coordinates = {
+    x: getCoordinateFromCursor(e, 'CLOSEST_SNAPPING_POINT', 'x'),
+    y: getCoordinateFromCursor(e, 'BULLET_POINT_OFFSET', 'y'),
+  }
 
-        blurTextNode(focusedTextNode)
-      } else if (targetElement(e).id !== 'click-container') {
-        const targetTextNode = textNodes.find(n => n.id == targetElement(e).id)
-
-        if (targetTextNode) {
-          focusTextNode(targetTextNode)
-        }
-      } else {
-        createNode(e)
-      }
-    }
-
-    return {
-      textNodes,
-      blurTextNode,
-      nodeIsEmpty,
-      nodeIsFocused,
-      focusedTextNodeId,
-      focusedTextNodeTitle,
-      pickedUpNodeId,
-      aNodeWasRecentlyDropped,
-      handlePageClick,
-      getCoordinateFromCursor,
-    }
-  },
-  methods: {
-    pickUpNode(e: MouseEvent, node: TextNode) {
-      const focusedNode = this.textNodes.find(n => this.nodeIsFocused(n))
-      if (focusedNode) {
-        this.blurTextNode(focusedNode)
-      }
-
-      this.pickedUpNodeId = node.id
-
-      const updateNodePosition = (e: MouseEvent) => {
-        node.coordinates = {
-          x: this.getCoordinateFromCursor(e, 'BULLET_POINT_OFFSET', 'x'),
-          y: this.getCoordinateFromCursor(e, 'BULLET_POINT_OFFSET', 'y'),
-        }
-      }
-
-      const dropNode = (e: MouseEvent) => {
-        this.pickedUpNodeId = ''
-
-        const nodes = this.textNodes
-        const coords = {
-          x: this.getCoordinateFromCursor(node.coordinates, 'CLOSEST_SNAPPING_POINT', 'x'),
-          y: node.coordinates.y,
-        }
-
-        node.coordinates = {
-          x: coords.x,
-          y: this.getCoordinateFromCursor(coords, 'CLOSEST_FREE_SNAPPING_POINT', 'y', nodes),
-        }
-
-        this.aNodeWasRecentlyDropped = true
-
-        setTimeout(() => (this.aNodeWasRecentlyDropped = false), 100)
-
-        document.removeEventListener('mousemove', updateNodePosition)
-        document.removeEventListener('mouseup', dropNode)
-      }
-
-      document.addEventListener('mousemove', updateNodePosition)
-      document.addEventListener('mouseup', dropNode)
+  const newNode = {
+    id: cuid(),
+    title: '',
+    coordinates: {
+      x: coordinates.x,
+      y: getCoordinateFromCursor(coordinates, 'CLOSEST_FREE_SNAPPING_POINT', 'y', textNodes),
     },
-    nodeIsPickedUp(node: TextNode) {
-      return this.pickedUpNodeId == node.id
-    },
-  },
-})
+  }
+
+  textNodes.push(newNode)
+
+  focusTextNode(newNode)
+}
+
+function handlePageClick(e: MouseEvent) {
+  if (e.target == clickContainer.value && !aNodeWasRecentlyBlurred.value) {
+    return createNode(e)
+  }
+
+  const targetTextNode = nodeRefs.value.find(n => n.autoSizeTextarea?.$refs.textarea == e.target)
+
+  if (targetTextNode && targetTextNode.textNode.id !== focusedTextNodeId.value) {
+    focusTextNode(targetTextNode.textNode)
+  }
+}
+
+function releaseNode() {
+  aNodeWasRecentlyBlurred.value = true
+
+  setTimeout(() => (aNodeWasRecentlyBlurred.value = false), 100)
+}
+
+function pickUpNode(e: MouseEvent, node: TextNode) {
+  pickedUpNodeId.value = node.id
+
+  const updateNodePosition = (e: MouseEvent) => {
+    node.coordinates = {
+      x: getCoordinateFromCursor(e, 'BULLET_POINT_OFFSET', 'x'),
+      y: getCoordinateFromCursor(e, 'BULLET_POINT_OFFSET', 'y'),
+    }
+  }
+
+  const dropNode = () => {
+    pickedUpNodeId.value = ''
+
+    const nodes = textNodes
+    const coords = {
+      x: getCoordinateFromCursor(node.coordinates, 'CLOSEST_SNAPPING_POINT', 'x'),
+      y: node.coordinates.y,
+    }
+
+    node.coordinates = {
+      x: coords.x,
+      y: getCoordinateFromCursor(coords, 'CLOSEST_FREE_SNAPPING_POINT', 'y', nodes),
+    }
+
+    releaseNode()
+
+    document.removeEventListener('mousemove', updateNodePosition)
+    document.removeEventListener('mouseup', dropNode)
+  }
+
+  document.addEventListener('mousemove', updateNodePosition)
+  document.addEventListener('mouseup', dropNode)
+}
+
+const nodeIsPickedUp = (node: TextNode) => {
+  return pickedUpNodeId.value == node.id
+}
 </script>
 
 <style></style>
