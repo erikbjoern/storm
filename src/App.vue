@@ -101,7 +101,7 @@ export default defineComponent({
     const createNode = (e: MouseEvent) => {
       const coordinates = {
         x: getCoordinateFromCursor(e, 'CLOSEST_SNAPPING_POINT', 'x'),
-        y: e.y,
+        y: getCoordinateFromCursor(e, 'BULLET_POINT_OFFSET', 'y'),
       }
 
       const newNode = {
